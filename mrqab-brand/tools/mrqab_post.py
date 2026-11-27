@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Merqab post renderer: one spec (JSON) -> X image 4:5 PNG + 9:16 motion-graphics reel MP4 (silent).
+"""Merqab post renderer: one spec (JSON) -> X image 4:5 PNG + 9:16 motion-graphics reel MP4
+(no music; synthesized typewriter/keyboard sound effects synced to the text; headline on screen within ~0.7s).
 
 Usage:  python3 mrqab_post.py spec.json OUT_DIR [--brand BRAND_DIR]
 
@@ -81,37 +82,94 @@ JS = r"""
 const ease=x=>1-Math.pow(1-Math.min(Math.max(x,0),1),3);
 const seg=(t,a,b)=>ease((t-a)/(b-a));
 const fmt=(v,d)=>Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-function set(el,o,y,s){el.style.opacity=o;el.style.transform=`translateY(${y}px) scale(${s??1})`;}
+function set(el,o,y,s){if(!el)return;el.style.opacity=o;el.style.transform=`translateY(${y}px) scale(${s??1})`;}
 window.render=function(t){
-  const D=window.DUR, fin=t>=D;
-  const eye=document.querySelector('.eye'); if(eye){eye.style.transform=`scale(${1+0.05*t/D})`; eye.style.opacity=.42*seg(t,0,1.2);}
+  const D=window.DUR, L=window.TL, fin=t>=D;
+  const eye=document.querySelector('.eye'); if(eye){eye.style.transform=`scale(${1+0.05*t/D})`; eye.style.opacity=.42*seg(t,0,.6);}
   const g=document.querySelector('.glow'); if(g) g.style.opacity=.75+.25*Math.sin(t*1.3);
-  let p=seg(t,.2,.8); set(document.querySelector('.top'),p,(1-p)*-30);
-  p=seg(t,.6,1.1); set(document.querySelector('.kicker'),p,0,.85+.15*p);
+  let p=seg(t,L.top[0],L.top[1]); set(document.querySelector('.top'),p,(1-p)*-24);
+  p=seg(t,L.kick[0],L.kick[1]); set(document.querySelector('.kicker'),p,0,.85+.15*p);
   const dot=document.querySelector('.kicker i'); dot.style.opacity=.45+.55*Math.abs(Math.cos(t*2.4));
-  document.querySelectorAll('h1 .w').forEach((w,i)=>{const q=seg(t,1.0+i*.14,1.45+i*.14); set(w,q,(1-q)*40);});
-  const em=document.querySelector('h1 em'); if(em){const n=document.querySelectorAll('h1 .w').length;
-    const st=1.0+n*.14+.2, q=seg(t,st,st+.5);
-    const pulse=t>st+.5? .5+.5*Math.sin((t-st)*2.2):0;
-    em.style.textShadow=`0 0 ${18+22*pulse}px rgba(95,211,191,${.25+.35*pulse*q})`;}
-  const tb=1.0+document.querySelectorAll('h1 .w').length*.14+.3;
-  const sub=document.querySelector('.sub'); if(sub){p=seg(t,tb,tb+.5); set(sub,p,(1-p)*20);}
-  const b0=tb+.4;
+  document.querySelectorAll('h1 .w').forEach((w,i)=>{const a=L.w0+i*L.ws, q=seg(t,a,a+L.wd); set(w,q,(1-q)*34,.92+.08*q);});
+  const em=document.querySelector('h1 em'); if(em){const st=L.tEnd, q=seg(t,st,st+.3);
+    const pulse=t>st? .5+.5*Math.sin((t-st)*2.4):0;
+    em.style.textShadow=`0 0 ${16+24*pulse}px rgba(95,211,191,${(.25+.4*pulse)*q})`;}
+  p=seg(t,L.sub[0],L.sub[1]); set(document.querySelector('.sub'),p,(1-p)*16);
+  const b0=L.b0;
   document.querySelectorAll('[data-count]').forEach(el=>{const a=+el.dataset.at||0, v=+el.dataset.count, d=+el.dataset.dec||0;
-    const q=seg(t,b0+a,b0+a+1.3); el.textContent=(el.dataset.pre||'')+fmt(v*q,d)+(el.dataset.suf||'');});
-  document.querySelectorAll('[data-grow]').forEach(el=>{const a=+el.dataset.at||0, q=seg(t,b0+a,b0+a+1.3);
+    const q=seg(t,b0+a,b0+a+L.cnt); el.textContent=(el.dataset.pre||'')+fmt(v*q,d)+(el.dataset.suf||'');});
+  document.querySelectorAll('[data-grow]').forEach(el=>{const a=+el.dataset.at||0, q=seg(t,b0+a,b0+a+L.cnt);
     el.style[el.dataset.axis||'width']=(+el.dataset.grow*q)+'%';});
-  document.querySelectorAll('[data-in]').forEach(el=>{const a=+el.dataset.at||0, q=seg(t,b0+a,b0+a+.5); set(el,q,(1-q)*24);});
+  document.querySelectorAll('[data-in]').forEach(el=>{const a=+el.dataset.at||0, q=seg(t,b0+a-.2,b0+a+.25); set(el,q,(1-q)*20);});
   const lead=document.querySelector('.hrow.first .fil, .vcol.hl .bar, .big, .card:first-child');
-  if(lead && t>b0+2.5){const s=.5+.5*Math.sin((t-b0)*2.2); lead.style.filter=`drop-shadow(0 0 ${8+14*s}px rgba(95,211,191,.45))`;}
-  const note=document.querySelector('.note'); if(note){const q=seg(t,b0+2.6,b0+4.2);
-    note.style.clipPath=`inset(0 0 0 ${100-100*q}%)`; note.style.opacity=q>0?1:0;}
-  p=seg(t,b0+1.2,b0+1.8); set(document.querySelector('.foot'),p,(1-p)*16);
+  if(lead && t>L.glow){const s=.5+.5*Math.sin((t-b0)*2.2); lead.style.filter=`drop-shadow(0 0 ${8+14*s}px rgba(95,211,191,.45))`;}
+  const note=document.querySelector('.note'); if(note){const q=(t-L.note[0])/(L.note[1]-L.note[0]); const c=Math.min(Math.max(q,0),1);
+    note.style.clipPath=`inset(0 0 0 ${100-100*c}%)`; note.style.opacity=c>0?1:0;}
+  p=seg(t,L.foot[0],L.foot[1]); set(document.querySelector('.foot'),p,(1-p)*14);
   const tag=document.querySelector('.tag b'); if(tag) tag.style.textShadow=`0 0 ${10+10*Math.abs(Math.sin(t*1.7))}px rgba(95,211,191,.5)`;
   if(fin){document.querySelectorAll('*').forEach(e=>{e.style.filter='';});
     document.querySelectorAll('h1 em,.tag b').forEach(e=>e.style.textShadow='');}
 };
 """
+
+def timeline(spec):
+    """Shared timing for animation (JS) and typing sound (audio). Headline is fully on screen by ~0.7s."""
+    import re
+    nw = len(re.findall(r'<em>.*?</em>|<span class="num">.*?</span>|[^\s<]+', spec["title"]))
+    b = spec["body"]; n = len(b.get("rows", b.get("items", [1])))
+    stag = .12 if b["type"] == "vbars" else (.22 if b["type"] == "cards" else .15)
+    L = {"top": [0.0, .3], "kick": [.05, .3], "w0": .08, "ws": .05, "wd": .25}
+    L["tEnd"] = L["w0"] + (nw - 1) * L["ws"] + L["wd"]
+    L["sub"] = [L["tEnd"] - .05, L["tEnd"] + .3]
+    L["b0"] = L["tEnd"] + .25; L["cnt"] = 1.0; L["stag"] = stag; L["n"] = n; L["nw"] = nw; L["type"] = b["type"]
+    L["rowsEnd"] = L["b0"] + (n - 1) * stag + L["cnt"]
+    L["foot"] = [L["b0"] + .8, L["b0"] + 1.2]
+    L["note"] = [L["rowsEnd"] + .3, L["rowsEnd"] + 1.7]
+    L["glow"] = L["rowsEnd"]
+    L["hasSub"] = bool(spec.get("sub")); L["hasNote"] = bool(spec.get("note"))
+    L["vals"] = [r[1] for r in b.get("rows", [])] if b["type"] in ("hbars", "vbars") else ([b["value"]] if b["type"] == "bignum" else [])
+    return L
+
+def typing_audio(L, D, path, sr=44100, seed=7):
+    """Typewriter / keyboard sound effect synced to the text animation (no music)."""
+    import numpy as np, wave
+    rng = np.random.default_rng(seed); N = int(D * sr); out = np.zeros(N)
+    def click(t, amp=1.0, bright=1.0):
+        i = int(t * sr)
+        if i >= N: return
+        ln = int(.045 * sr); tt = np.arange(ln) / sr
+        nz = rng.standard_normal(ln); nz = np.diff(nz, prepend=0) * bright + nz * (1 - bright) * .4
+        env = np.exp(-tt / .006); body = np.sin(2 * np.pi * rng.uniform(140, 220) * tt) * np.exp(-tt / .012) * .5
+        tick = np.sin(2 * np.pi * rng.uniform(2600, 3600) * tt) * np.exp(-tt / .003) * .35
+        x = (nz * env * .55 + body + tick) * amp * rng.uniform(.7, 1.0)
+        e = min(N, i + ln); out[i:e] += x[:e - i]
+    def burst(a, b, rate, amp=1.0, bright=1.0):
+        t = a
+        while t < b:
+            click(t, amp, bright); t += max(.025, rng.normal(1 / rate, .25 / rate))
+    def bell(t):
+        i = int(t * sr); ln = int(.9 * sr); tt = np.arange(ln) / sr
+        x = (np.sin(2 * np.pi * 2093 * tt) + .4 * np.sin(2 * np.pi * 4186 * tt)) * np.exp(-tt / .25) * .22
+        e = min(N, i + ln); out[i:e] += x[:e - i]
+    burst(L["kick"][0], L["kick"][1], 22, .7)
+    for k in range(L["nw"]):
+        a = L["w0"] + k * L["ws"]; burst(a, a + L["ws"] * .9, 30, 1.0)
+    click(L["tEnd"] - .02, 1.3, .3)                      # space-bar thunk
+    bell(L["tEnd"] + .02)                                 # typewriter bell when the headline lands
+    if L["hasSub"]: burst(L["sub"][0], L["sub"][1], 24, .6)
+    for k in range(L["n"]):
+        a = L["b0"] + k * L["stag"]; burst(a, a + .12, 26, .7)
+        if k < len(L["vals"]):
+            steps = min(10, max(3, int(abs(L["vals"][k]))))
+            for j in range(steps): click(a + L["cnt"] * (1 - (1 - (j + 1) / steps) ** .5) * .9, .35, 1.0)
+    burst(L["foot"][0], L["foot"][1], 18, .45)
+    if L["hasNote"]: burst(L["note"][0], L["note"][1], 15, .65)
+    pk = np.max(np.abs(out)) or 1; out = out / pk * .85
+    fade = int(.3 * sr); out[-fade:] *= np.linspace(1, 0, fade)
+    pcm = np.int16(np.stack([out, out], 1) * 32767)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes())
+
 
 def title_html(t):
     # split into words; keep <em>...</em> and <span class="num">..</span> as single units
@@ -161,7 +219,7 @@ def page(spec, ratio, brand):
 <div class="kicker"><i></i>{spec["kicker"]}</div><h1>{title_html(spec["title"])}</h1>{sub}
 <div class="body">{body_html(spec["body"])}{note}</div>
 <div class="foot"><div class="src">{spec["source"]}</div><div class="tag">monitor data, turn into <b>insight</b></div></div></div>
-<script>window.DUR={spec.get("duration",10)};{JS}</script></body></html>"""
+<script>window.DUR={spec.get("duration",10)};window.TL={json.dumps(timeline(spec))};{JS}</script></body></html>"""
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("spec"); ap.add_argument("out"); ap.add_argument("--brand", default=BASE_URL)
@@ -193,9 +251,10 @@ def main():
             pg.close()
         br.close()
     out = os.path.join(a.out, f"{key}_reel.mp4")
+    wav = os.path.join(tmp, "typing.wav"); typing_audio(timeline(spec), D, wav)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(a.fps), "-i", os.path.join(tmp, "fr", "%04d.png"),
-                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-map", "0:v", "-map", "1:a", "-t", str(D),
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+                    "-i", wav, "-map", "0:v", "-map", "1:a", "-t", str(D),
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", "-movflags", "+faststart", out], check=True)
     shutil.rmtree(tmp)
     print(json.dumps({"key": key, "layout": res, "files": [f"{key}.png", f"{key}_916.png", f"{key}_reel.mp4"]}, ensure_ascii=False))
