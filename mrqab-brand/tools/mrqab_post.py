@@ -68,7 +68,7 @@ h1 em{font-style:normal;color:#5FD3BF;display:inline-block}
 .vcol .bar{width:100%;background:#3A2366;border-radius:14px 14px 0 0}
 .vcol.hl .bar{background:#5FD3BF}.vcol.hl .v{color:#5FD3BF}
 .vcol .l{margin-top:14px;font-weight:500;font-size:26px;color:#9A8FB5;white-space:nowrap}
-.big{font-family:'SG';font-weight:700;font-size:300px;line-height:1;color:#5FD3BF;direction:ltr}
+.big{font-family:'SG';font-weight:700;font-size:300px;line-height:1;color:#5FD3BF;direction:ltr;text-align:right}
 .bigl{font-weight:700;font-size:40px;margin-top:20px;line-height:1.4}
 .bign{font-weight:500;font-size:30px;color:#9A8FB5;margin-top:12px}
 .cards{display:flex;flex-direction:column;gap:22px}
