@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Merqab post renderer: one spec (JSON) -> X image 4:5 PNG + 9:16 motion-graphics reel MP4
-(no music; synthesized typewriter/keyboard sound effects synced to the text). Rhythm: the first headline word pops in
-fast (~0.1s), the rest of the headline types in calmly word by word; then a pause; then the subtitle, then the chart
+(no music; synthesized sound effects synced to the text). Rhythm: the big headline is TYPED letter by letter with a
+soft keyboard sound per keystroke: the first three words type fast (slower than a burst) from ~0.1s, the rest of the headline types
+calmly (short pauses at spaces and punctuation); then a pause; then the subtitle, then the chart
 rows enter one by one and grow/count with a natural cadence; then footer + note. Last real motion lands ~15s on
 average (row spacing is solved from the row count); video length = last motion + 1s hold.
 + <key>_cover.png: the reel frame at cover_ms = the moment the big headline is complete and NOTHING below it has
@@ -61,7 +62,7 @@ h1 em{font-style:normal;color:#5FD3BF;display:inline-block}
 .tag b{color:#5FD3BF}
 .note{margin-top:34px;font-weight:500;font-size:28px;color:#9A8FB5;line-height:1.6}
 .hrow{display:flex;align-items:center;gap:22px;margin:13px 0}
-.hrow .lab{width:330px;font-weight:700;font-size:32px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .lab{width:330px;font-weight:700;font-size:32px;line-height:1.75;padding:2px 0 8px;margin:-2px 0 -8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hrow .trk{flex:1;height:34px;background:#1C1030;border-radius:17px;overflow:hidden;display:flex}
 .hrow .fil{height:100%;background:#7B45DA;border-radius:17px}
 .hrow.hl .fil{background:#5FD3BF}
@@ -98,8 +99,8 @@ window.render=function(t){
   let p=seg(t,L.top[0],L.top[1]); set(document.querySelector('.top'),p,(1-p)*-24);
   p=seg(t,L.kick[0],L.kick[1]); set(document.querySelector('.kicker'),p,0,.85+.15*p);
   const dot=document.querySelector('.kicker i'); dot.style.opacity=.45+.55*Math.abs(Math.cos(t*2.4));
-  document.querySelectorAll('h1 .w').forEach((w,i)=>{const a=L.wAt[i], d=i?L.wd:L.wd0, q=seg(t,a,a+d);
-    set(w,q,(1-q)*(i?22:30),(i?.97:.9)+(i?.03:.1)*q);});
+  document.querySelectorAll('h1 .c').forEach((c,i)=>{const q=cl((t-L.cAt[i])/L.cFade);
+    c.style.color=c.dataset.m?`rgba(95,211,191,${q})`:`rgba(242,238,255,${q})`;});
   const em=document.querySelector('h1 em'); if(em){const st=L.tEnd, q=seg(t,st,st+.4);
     const pulse=t>st? .5+.5*Math.sin((t-st)*2.0):0;
     em.style.textShadow=`0 0 ${16+24*pulse}px rgba(95,211,191,${(.25+.4*pulse)*q})`;}
@@ -117,7 +118,8 @@ window.render=function(t){
   p=seg(t,L.foot[0],L.foot[1]); set(document.querySelector('.foot'),p,(1-p)*14);
   const tag=document.querySelector('.tag b'); if(tag) tag.style.textShadow=`0 0 ${10+10*Math.abs(Math.sin(t*1.7))}px rgba(95,211,191,.5)`;
   if(fin){document.querySelectorAll('*').forEach(e=>{e.style.filter='';});
-    document.querySelectorAll('h1 em,.tag b').forEach(e=>e.style.textShadow='');}
+    document.querySelectorAll('h1 em,.tag b').forEach(e=>e.style.textShadow='');
+    document.querySelectorAll('h1 .c').forEach(c=>c.style.color='');}
 };
 """
 
@@ -131,6 +133,34 @@ def title_tokens(t):
         else: out.append(x)
     return out
 
+def title_chars(t):
+    """Per token: list of typed characters (combining marks stay with their base letter)."""
+    import re, unicodedata
+    out = []
+    for tok in title_tokens(t):
+        txt = re.sub(r"<[^>]+>", "", tok); cs = []
+        for ch in txt:
+            if cs and unicodedata.combining(ch): cs[-1] += ch
+            else: cs.append(ch)
+        out.append(cs)
+    return out
+
+def type_schedule(t, start=.1, fast=.05, calm=.072, nfast=3, seed=11):
+    """Keystroke times for the headline: [(time, kind)] kind in {'key','space'}; chars -> list of times per typed char."""
+    import random
+    rnd = random.Random(seed); ev = []; ct = []; x = start
+    words = title_chars(t)
+    for w, cs in enumerate(words):
+        for ch in cs:
+            ct.append(round(x, 3)); ev.append((round(x, 3), "key"))
+            dt = fast if w < nfast else calm
+            x += dt * rnd.uniform(.82, 1.18)
+            if w >= nfast and ch in PUNCT: x += .12
+        if w < len(words) - 1:
+            ev.append((round(x, 3), "space"))
+            x += (fast * 1.2) if w < nfast - 1 else (.13 if w == nfast - 1 else .1)
+    return ct, ev
+
 def timeline(spec):
     """Shared timing for animation (JS) and typing sound (audio).
     Headline: first word pops in fast, the rest types in calmly; a pause (the cover lives in it); subtitle; chart rows
@@ -141,9 +171,11 @@ def timeline(spec):
     b = spec["body"]; ty = b["type"]
     if ty == "bignum": n = 1 + bool(b.get("label")) + bool(b.get("note"))
     else: n = len(b.get("rows", b.get("items", [1])))
-    L = {"top": [0.0, .25], "kick": [0.0, .25], "wd0": .3, "wd": .45, "w0": .1, "w1": .55, "ws": .4}
-    L["wAt"] = [L["w0"]] + [round(L["w1"] + (i - 1) * L["ws"], 3) for i in range(1, nw)]
-    L["tEnd"] = round(L["wAt"][-1] + (L["wd"] if nw > 1 else L["wd0"]), 3)     # headline fully settled
+    L = {"top": [0.0, .25], "kick": [0.0, .25], "cFade": .05}
+    L["cAt"], L["keys"] = type_schedule(spec["title"])
+    nf = sum(len(c) for c in title_chars(spec["title"])[:3])
+    L["fastEnd"] = round(L["cAt"][min(nf, len(L["cAt"])) - 1], 3)               # last key of the first three words
+    L["tEnd"] = round(L["cAt"][-1] + L["cFade"] + .02, 3)                       # headline fully typed
     L["cover"] = round(L["tEnd"] + .3, 3)                                       # teaser cover: headline only
     gap = .9
     hasSub, hasNote = bool(spec.get("sub")), bool(spec.get("note"))
@@ -184,6 +216,7 @@ def typing_audio(L, D, path, sr=44100, seed=7):
     """Typewriter / keyboard sound effect synced to the text animation (no music)."""
     import numpy as np, wave
     rng = np.random.default_rng(seed); N = int(D * sr); out = np.zeros(N)
+    title_chars_cache = [0] * L["nw"]
     def click(t, amp=1.0, bright=1.0):
         i = int(t * sr)
         if i >= N: return
@@ -201,12 +234,19 @@ def typing_audio(L, D, path, sr=44100, seed=7):
         i = int(t * sr); ln = int(.9 * sr); tt = np.arange(ln) / sr
         x = (np.sin(2 * np.pi * 2093 * tt) + .4 * np.sin(2 * np.pi * 4186 * tt)) * np.exp(-tt / .25) * .22
         e = min(N, i + ln); out[i:e] += x[:e - i]
-    burst(L["kick"][0], L["kick"][1], 22, .6)
-    for k, a in enumerate(L["wAt"]):                                  # one calm key-run per headline word
-        if k == 0: burst(a, a + .18, 34, 1.0)
-        else: burst(a, a + .22, 20, .85); click(a + .3, .5, .4)
-    click(L["tEnd"] - .02, 1.2, .3)                                   # space-bar thunk
-    bell(L["tEnd"] + .02)                                             # bell when the headline lands
+    # reference level: the previous mix's headline sounds (only used so the lower elements keep their old loudness)
+    ref = out.copy(); out_below_start = out
+    def headline_old(buf):
+        nonlocal out
+        keep = out; out = buf
+        burst(L["kick"][0], L["kick"][1], 22, .6)
+        t0 = .1
+        for k in range(len(title_chars_cache)):
+            a = t0 + (0 if k == 0 else .45 + (k - 1) * .4)
+            if k == 0: burst(a, a + .18, 34, 1.0)
+            else: burst(a, a + .22, 20, .85); click(a + .3, .5, .4)
+        click(L["tEnd"] - .02, 1.2, .3); bell(L["tEnd"] + .02)
+        out = keep
     if L["hasSub"]: burst(L["sub"][0], L["sub"][1] - .05, 20, .55)
     for k in range(L["n"]):
         a = L["rowAt"][k]; burst(a, a + .16, 22, .65)                    # a row arrives
@@ -219,7 +259,34 @@ def typing_audio(L, D, path, sr=44100, seed=7):
                 click(c0 + L["cnt"] * f * .98, .3, 1.0)
     burst(L["foot"][0], L["foot"][1], 16, .4)
     if L["hasNote"]: burst(L["note"][0], L["note"][1], 14, .6)
-    pk = np.max(np.abs(out)) or 1; out = out / pk * .85
+    ref = out.copy(); headline_old(ref)
+    pk = np.max(np.abs(ref)) or 1; out = out / pk * .85                 # lower elements: same level as before
+    # soft, slightly muted keyboard for the big headline: press + short release, varied per key; space bar heavier
+    kb = np.zeros(N); krng = np.random.default_rng(seed + 101)
+    def lp(x, a):                                                       # one-pole low-pass (muting)
+        y = np.empty_like(x); s = 0.0
+        for i, v in enumerate(x): s += a * (v - s); y[i] = s
+        return y
+    def key(t, amp, space=False):
+        i = int(t * sr)
+        if i >= N: return
+        ln = int(.09 * sr); tt = np.arange(ln) / sr
+        nz = krng.standard_normal(ln)
+        hi = lp(nz, krng.uniform(.28, .38) if not space else .16)       # muted click
+        press = hi * np.exp(-tt / (.0035 if not space else .006))
+        f0 = krng.uniform(260, 380) if not space else krng.uniform(120, 170)
+        thock = np.sin(2 * np.pi * f0 * tt) * np.exp(-tt / (.010 if not space else .022)) * (.55 if not space else .9)
+        rel_d = int(krng.uniform(.045, .07) * sr)                       # key release, quieter
+        rel = np.zeros(ln); r = lp(krng.standard_normal(ln - rel_d), .4) * np.exp(-tt[:ln - rel_d] / .0025) * .35
+        rel[rel_d:] = r
+        x = (press + thock + rel) * amp * krng.uniform(.78, 1.0)
+        e = min(N, i + ln); kb[i:e] += x[:e - i]
+    for (t0, kind) in L["keys"]:
+        key(t0, 1.0, kind == "space")
+    kpk = np.max(np.abs(kb)) or 1; kb = kb / kpk * .40                  # quieter than the old headline sounds
+    out = out + kb
+    tot = np.max(np.abs(out))
+    if tot > .5: out = out / tot * .5                                   # overall peak <= -6 dB
     fade = int(.3 * sr); out[-fade:] *= np.linspace(1, 0, fade)
     pcm = np.int16(np.stack([out, out], 1) * 32767)
     with wave.open(path, "wb") as w:
@@ -227,7 +294,25 @@ def typing_audio(L, D, path, sr=44100, seed=7):
 
 
 def title_html(t):
-    return " ".join(f'<span class="w">{x}</span>' for x in title_tokens(t))
+    """Every typed character in its own inline span (shaping/joining is kept across inline spans of the same font);
+    untyped characters are transparent, so the layout never moves while typing."""
+    import re, unicodedata
+    words = []
+    for tok in title_tokens(t):
+        parts = re.split(r"(<[^>]+>)", tok); html = []; in_em = False
+        for pt in parts:
+            if not pt: continue
+            if pt.startswith("<"):
+                if pt.startswith("<em"): in_em = True
+                elif pt.startswith("</em"): in_em = False
+                html.append(pt); continue
+            for ch in pt:
+                if html and unicodedata.combining(ch) and html[-1].endswith("</span>") and 'class="c"' in html[-1]:
+                    html[-1] = html[-1][:-7] + ch + "</span>"
+                else:
+                    html.append(f'<span class="c"{" data-m=1" if in_em else ""}>{H.escape(ch)}</span>')
+        words.append('<span class="w">' + "".join(html) + "</span>")
+    return " ".join(words)
 
 def body_html(b):
     t = b["type"]
@@ -263,7 +348,7 @@ def body_html(b):
 
 def page(spec, ratio, brand):
     h = 1350 if ratio == "45" else 1920
-    pad = "84px 90px 70px" if ratio == "45" else "210px 150px 430px 70px"
+    pad = "84px 90px 70px" if ratio == "45" else "310px 150px 430px 80px"
     css = CSS.replace("B/", brand + "/").replace("HPX", f"{h}px").replace("PAD", pad).replace("H1PX", "78px" if ratio == "45" else "82px")
     deco = '<div class="glow"></div><div class="eye"></div>' if ratio == "916" else ""
     sub = f'<p class="sub">{spec["sub"]}</p>' if spec.get("sub") else ""
