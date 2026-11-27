@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Merqab post renderer: one spec (JSON) -> X image 4:5 PNG + 9:16 motion-graphics reel MP4
-(no music; synthesized typewriter/keyboard sound effects synced to the text; headline on screen within ~0.7s).
+(no music; synthesized typewriter/keyboard sound effects synced to the text; headline on screen within ~0.7s)
++ <key>_cover.png: the reel frame at cover_ms (after every element has appeared and settled), used as the video cover.
 
 Usage:  python3 mrqab_post.py spec.json OUT_DIR [--brand BRAND_DIR]
 
@@ -68,7 +69,7 @@ h1 em{font-style:normal;color:#5FD3BF;display:inline-block}
 .vcol .bar{width:100%;background:#3A2366;border-radius:14px 14px 0 0}
 .vcol.hl .bar{background:#5FD3BF}.vcol.hl .v{color:#5FD3BF}
 .vcol .l{margin-top:14px;font-weight:500;font-size:26px;color:#9A8FB5;white-space:nowrap}
-.big{font-family:'SG';font-weight:700;font-size:300px;line-height:1;color:#5FD3BF;direction:ltr;text-align:right}
+.big{font-family:'SG';font-weight:700;font-size:300px;line-height:1;color:#5FD3BF;direction:ltr}
 .bigl{font-weight:700;font-size:40px;margin-top:20px;line-height:1.4}
 .bign{font-weight:500;font-size:30px;color:#9A8FB5;margin-top:12px}
 .cards{display:flex;flex-direction:column;gap:22px}
@@ -129,6 +130,11 @@ def timeline(spec):
     L["hasSub"] = bool(spec.get("sub")); L["hasNote"] = bool(spec.get("note"))
     L["vals"] = [r[1] for r in b.get("rows", [])] if b["type"] in ("hbars", "vbars") else ([b["value"]] if b["type"] == "bignum" else [])
     return L
+
+def cover_time(L, D):
+    """Moment the reel is fully built and still: all elements have appeared (headline, rows/numbers, note, footer) + 0.7s."""
+    settled = max(L["note"][1] if L["hasNote"] else 0, L["foot"][1], L["rowsEnd"])
+    return round(min(settled + 0.7, D - 0.5), 2)
 
 def typing_audio(L, D, path, sr=44100, seed=7):
     """Typewriter / keyboard sound effect synced to the text animation (no music)."""
@@ -244,6 +250,8 @@ def main():
             suffix = "" if ratio == "45" else "_916"
             pg.screenshot(path=os.path.join(a.out, f"{key}{suffix}.png"))
             if ratio == "916":
+                ct = cover_time(timeline(spec), D)
+                pg.evaluate(f"render({ct})"); pg.screenshot(path=os.path.join(a.out, f"{key}_cover.png"))
                 fr = os.path.join(tmp, "fr"); os.makedirs(fr)
                 n = int(D * a.fps)
                 for i in range(n):
@@ -257,7 +265,9 @@ def main():
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", "-movflags", "+faststart", out], check=True)
     shutil.rmtree(tmp)
-    print(json.dumps({"key": key, "layout": res, "files": [f"{key}.png", f"{key}_916.png", f"{key}_reel.mp4"]}, ensure_ascii=False))
+    ct = cover_time(timeline(spec), D)
+    print(json.dumps({"key": key, "layout": res, "cover_ms": int(ct * 1000),
+                      "files": [f"{key}.png", f"{key}_916.png", f"{key}_reel.mp4", f"{key}_cover.png"]}, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()
