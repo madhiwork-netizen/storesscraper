@@ -9,6 +9,9 @@ average (row spacing is solved from the row count); video length = last motion +
 appeared yet (no subtitle/chart/note/footer): a teaser cover that makes people open the reel.
 The cover is ALSO frame 0 of the reel (one frame, ~33ms), because TikTok ignores thumbnailOffset and shows the first frame;
 cover_ms (already shifted by that frame) still points at the same cover moment inside the animation for Instagram.
+Buffer: ALWAYS send thumbnailOffset = cover_ms exactly as printed (Instagram AND TikTok). NEVER send 0: Buffer/TikTok treat 0 as
+"no cover" and TikTok then picks a random mid-video frame. If TikTok's cover still comes out wrong, the fallback is Buffer
+notification publishing for TikTok (the owner picks the cover in the TikTok app) — only with the owner's approval.
 
 Usage:  python3 mrqab_post.py spec.json OUT_DIR [--brand BRAND_DIR]
 
