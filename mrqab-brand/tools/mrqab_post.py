@@ -5,13 +5,11 @@ soft keyboard sound per keystroke: the first three words type fast (slower than 
 calmly (short pauses at spaces and punctuation); then a pause; then the subtitle, then the chart
 rows enter one by one and grow/count with a natural cadence; then footer + note. Last real motion lands ~15s on
 average (row spacing is solved from the row count); video length = last motion + 1s hold.
-+ <key>_cover.png: the reel frame at cover_ms = the moment the big headline is complete and NOTHING below it has
-appeared yet (no subtitle/chart/note/footer): a teaser cover that makes people open the reel.
-The cover is ALSO frame 0 of the reel (one frame, ~33ms), because TikTok ignores thumbnailOffset and shows the first frame;
-cover_ms (already shifted by that frame) still points at the same cover moment inside the animation for Instagram.
-Buffer: ALWAYS send thumbnailOffset = cover_ms exactly as printed (Instagram AND TikTok). NEVER send 0: Buffer/TikTok treat 0 as
-"no cover" and TikTok then picks a random mid-video frame. If TikTok's cover still comes out wrong, the fallback is Buffer
-notification publishing for TikTok (the owner picks the cover in the TikTok app) — only with the owner's approval.
++ <key>_cover.png: a dedicated COVER CARD (owner-approved, Box-Map style): logo bar on top and the big headline ALONE,
+large (auto-fit, max 4 lines), right-aligned, vertically centred in the frame (inside the 3:4 profile-grid crop), mint <em> word,
+short mint rule under it. No sub/chart/note/footer. The card fills the FIRST 0.3s of the reel (TikTok + Instagram grid cover);
+then the normal animation starts (headline typed letter by letter, etc.). cover_ms = 150 (middle of the card).
+Buffer: ALWAYS send thumbnailOffset = cover_ms exactly as printed (Instagram AND TikTok). NEVER send 0.
 
 Usage:  python3 mrqab_post.py spec.json OUT_DIR [--brand BRAND_DIR]
 
@@ -368,6 +366,27 @@ def page(spec, ratio, brand):
 <div class="foot"><div class="src">{spec["source"]}</div><div class="tag">monitor data, turn into <b>insight</b></div></div></div>
 <script>window.DUR={duration(spec)};window.TL={json.dumps(timeline(spec))};{JS}</script></body></html>"""
 
+COVER_SEC = 0.3   # dedicated cover card shown at the very start of the reel (TikTok/Instagram grid cover)
+
+def cover_page(spec, brand):
+    """Cover card 9:16: logo bar on top, the big headline alone, large, vertically centred in the frame
+    (inside the 3:4 profile-grid crop), right-aligned; mint <em> word; a short rule under it. No sub/chart/note/footer."""
+    css = CSS.replace("B/", brand + "/").replace("HPX", "1920px").replace("PAD", "310px 110px 430px 110px").replace("H1PX", "120px")
+    extra = """
+.cv{position:absolute;left:110px;right:110px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center}
+.cv h1{margin:0;font-size:120px;line-height:1.24}
+.cv .rule{margin-top:46px;height:6px;width:320px;border-radius:3px;background:#5FD3BF;opacity:.85}
+"""
+    return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>{css}{extra}</style></head><body>
+<div class="glow"></div><div class="eye"></div>
+<div class="post"><div class="top"><div class="brand"><img src="{brand}/eye.png"><span>مرقاب</span></div><div class="handle">@mrqabco</div></div></div>
+<div class="cv"><h1 id="cvh">{spec["title"]}</h1><div class="rule"></div></div>
+<script>
+(function(){{const h=document.getElementById('cvh');let s=120;
+ const fits=()=>{{const r=h.getBoundingClientRect();const lh=parseFloat(getComputedStyle(h).lineHeight);return r.height<=lh*4+2&&h.scrollWidth<=h.clientWidth+2;}};
+ while(!fits()&&s>72){{s-=4;h.style.fontSize=s+'px';}}}})();
+</script></body></html>"""
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("spec"); ap.add_argument("out"); ap.add_argument("--brand", default=BASE_URL)
     ap.add_argument("--fps", type=int, default=30); a = ap.parse_args()
@@ -392,24 +411,29 @@ def main():
             pg.screenshot(path=os.path.join(a.out, f"{key}{suffix}.png"))
             if ratio == "916":
                 ct = cover_time(TL, D)
-                pg.evaluate(f"render({ct})"); pg.screenshot(path=os.path.join(a.out, f"{key}_cover.png"))
+                cf = os.path.join(tmp, "cover.html"); open(cf, "w", encoding="utf-8").write(cover_page(spec, brand))
+                cp = br.new_page(viewport={"width": 1080, "height": 1920}); cp.goto("file://" + cf)
+                cp.evaluate("document.fonts.ready"); cp.wait_for_timeout(500)
+                cp.screenshot(path=os.path.join(a.out, f"{key}_cover.png")); cp.close()
                 fr = os.path.join(tmp, "fr"); os.makedirs(fr)
-                # frame 0 = the cover (TikTok ignores the thumbnail offset and uses the first frame); the animation starts at frame 1
-                shutil.copy(os.path.join(a.out, f"{key}_cover.png"), os.path.join(fr, "0000.png"))
+                # the cover card fills the first COVER_SEC of the reel (grid cover on TikTok/Instagram); the animation follows
+                NC = int(round(COVER_SEC * a.fps))
+                for i in range(NC):
+                    shutil.copy(os.path.join(a.out, f"{key}_cover.png"), os.path.join(fr, f"{i:04d}.png"))
                 n = int(D * a.fps)
                 for i in range(n):
-                    pg.evaluate(f"render({i / a.fps})"); pg.screenshot(path=os.path.join(fr, f"{i + 1:04d}.png"))
+                    pg.evaluate(f"render({i / a.fps})"); pg.screenshot(path=os.path.join(fr, f"{i + NC:04d}.png"))
             pg.close()
         br.close()
     out = os.path.join(a.out, f"{key}_reel.mp4")
     wav = os.path.join(tmp, "typing.wav"); typing_audio(TL, D, wav)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(a.fps), "-i", os.path.join(tmp, "fr", "%04d.png"),
-                    "-i", wav, "-filter_complex", f"[1:a]adelay={int(round(1000 / a.fps))}:all=1[aa]", "-map", "0:v", "-map", "[aa]",
-                    "-t", str(D + 1 / a.fps),
+                    "-i", wav, "-filter_complex", f"[1:a]adelay={int(round(1000 * COVER_SEC))}:all=1[aa]", "-map", "0:v", "-map", "[aa]",
+                    "-t", str(D + COVER_SEC),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", "-movflags", "+faststart", out], check=True)
     shutil.rmtree(tmp)
-    ct = cover_time(TL, D) + 1 / a.fps          # +1 frame: the cover frame is prepended at t=0
+    ct = COVER_SEC / 2                           # middle of the cover card at the start of the reel
     print(json.dumps({"key": key, "layout": res, "cover_ms": int(round(ct * 1000)), "duration": D, "last_motion": TL["last"],
                       "files": [f"{key}.png", f"{key}_916.png", f"{key}_reel.mp4", f"{key}_cover.png"]}, ensure_ascii=False))
 
