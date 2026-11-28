@@ -7,6 +7,8 @@ rows enter one by one and grow/count with a natural cadence; then footer + note.
 average (row spacing is solved from the row count); video length = last motion + 1s hold.
 + <key>_cover.png: the reel frame at cover_ms = the moment the big headline is complete and NOTHING below it has
 appeared yet (no subtitle/chart/note/footer): a teaser cover that makes people open the reel.
+The cover is ALSO frame 0 of the reel (one frame, ~33ms), because TikTok ignores thumbnailOffset and shows the first frame;
+cover_ms (already shifted by that frame) still points at the same cover moment inside the animation for Instagram.
 
 Usage:  python3 mrqab_post.py spec.json OUT_DIR [--brand BRAND_DIR]
 
@@ -389,19 +391,22 @@ def main():
                 ct = cover_time(TL, D)
                 pg.evaluate(f"render({ct})"); pg.screenshot(path=os.path.join(a.out, f"{key}_cover.png"))
                 fr = os.path.join(tmp, "fr"); os.makedirs(fr)
+                # frame 0 = the cover (TikTok ignores the thumbnail offset and uses the first frame); the animation starts at frame 1
+                shutil.copy(os.path.join(a.out, f"{key}_cover.png"), os.path.join(fr, "0000.png"))
                 n = int(D * a.fps)
                 for i in range(n):
-                    pg.evaluate(f"render({i / a.fps})"); pg.screenshot(path=os.path.join(fr, f"{i:04d}.png"))
+                    pg.evaluate(f"render({i / a.fps})"); pg.screenshot(path=os.path.join(fr, f"{i + 1:04d}.png"))
             pg.close()
         br.close()
     out = os.path.join(a.out, f"{key}_reel.mp4")
     wav = os.path.join(tmp, "typing.wav"); typing_audio(TL, D, wav)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(a.fps), "-i", os.path.join(tmp, "fr", "%04d.png"),
-                    "-i", wav, "-map", "0:v", "-map", "1:a", "-t", str(D),
+                    "-i", wav, "-filter_complex", f"[1:a]adelay={int(round(1000 / a.fps))}:all=1[aa]", "-map", "0:v", "-map", "[aa]",
+                    "-t", str(D + 1 / a.fps),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", "-movflags", "+faststart", out], check=True)
     shutil.rmtree(tmp)
-    ct = cover_time(TL, D)
+    ct = cover_time(TL, D) + 1 / a.fps          # +1 frame: the cover frame is prepended at t=0
     print(json.dumps({"key": key, "layout": res, "cover_ms": int(round(ct * 1000)), "duration": D, "last_motion": TL["last"],
                       "files": [f"{key}.png", f"{key}_916.png", f"{key}_reel.mp4", f"{key}_cover.png"]}, ensure_ascii=False))
 
